@@ -13,6 +13,7 @@ dependencies = [
     "scikit-learn>=1.5.0",
     "loguru>=0.7.0",
     "pyyaml>=6.0",
+    "pandera>=0.20.0",
 ]
 
 [project.urls]

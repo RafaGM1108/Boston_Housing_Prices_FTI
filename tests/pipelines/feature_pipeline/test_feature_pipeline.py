@@ -3,11 +3,16 @@
 from pathlib import Path
 
 import pandas as pd
+import pandera.errors
+import pytest
 
 from pipelines.feature_pipeline.feature_pipeline import (
+    build_feature_schema,
     load_raw_data,
     save_features,
     transform_features,
+    validate_features,
+    validate_raw_data,
 )
 
 EXPECTED_ROWS = 2
@@ -34,6 +39,31 @@ def _make_raw_df() -> pd.DataFrame:
             "medv": [24.0, 21.6, 33.4, 33.4, None],
         }
     )
+
+
+def _make_valid_features_df() -> pd.DataFrame:
+    """Crea un DataFrame de features válidos (post-transformación)."""
+    return pd.DataFrame(
+        {
+            "crim": [0.006, 0.027],
+            "zn": [18.0, 0.0],
+            "indus": [2.31, 7.07],
+            "chas": [0.0, 1.0],
+            "nox": [0.538, 0.469],
+            "rm": [6.575, 6.421],
+            "age": [65.2, 78.9],
+            "dis": [4.09, 4.967],
+            "rad": [1.0, 2.0],
+            "tax": [296.0, 242.0],
+            "ptratio": [15.3, 17.8],
+            "black": [396.9, 396.9],
+            "lstat": [4.98, 9.14],
+            "medv": [24.0, 21.6],
+        }
+    )
+
+
+# --- Tests de transformación (issue 1) ---
 
 
 def test_transform_removes_duplicates() -> None:
@@ -81,3 +111,74 @@ def test_save_features_creates_file(tmp_path: object) -> None:
     out_path = str(tmp_path) + "/sub/output.csv"  # type: ignore[operator]
     save_features(df, out_path)
     assert Path(out_path).exists()
+
+
+# --- Tests de validación de datos crudos (issue 2) ---
+
+
+def test_validate_raw_data_passes_with_valid_data() -> None:
+    df = _make_raw_df()
+    validate_raw_data(df, id_column="ID", target_column="medv")
+
+
+def test_validate_raw_data_fails_missing_columns() -> None:
+    df = _make_raw_df().drop(columns=["crim", "zn"])
+    with pytest.raises(ValueError, match="Columnas faltantes"):
+        validate_raw_data(df, id_column="ID", target_column="medv")
+
+
+def test_validate_raw_data_fails_empty_dataset() -> None:
+    df = _make_raw_df().iloc[:0]
+    with pytest.raises(ValueError, match="vacío"):
+        validate_raw_data(df, id_column="ID", target_column="medv")
+
+
+# --- Tests de validación de features (issue 2) ---
+
+
+def test_validate_features_passes_with_valid_data() -> None:
+    df = _make_valid_features_df()
+    result = validate_features(df)
+    assert len(result) == EXPECTED_ROWS
+
+
+def test_validate_features_fails_with_nulls() -> None:
+    df = _make_valid_features_df()
+    df.loc[0, "crim"] = None
+    with pytest.raises(pandera.errors.SchemaError):
+        validate_features(df)
+
+
+def test_validate_features_fails_negative_crim() -> None:
+    df = _make_valid_features_df()
+    df.loc[0, "crim"] = -1.0
+    with pytest.raises(pandera.errors.SchemaError):
+        validate_features(df)
+
+
+def test_validate_features_fails_invalid_chas() -> None:
+    df = _make_valid_features_df()
+    df.loc[0, "chas"] = 2.0
+    with pytest.raises(pandera.errors.SchemaError):
+        validate_features(df)
+
+
+def test_validate_features_fails_negative_medv() -> None:
+    df = _make_valid_features_df()
+    df.loc[0, "medv"] = -5.0
+    with pytest.raises(pandera.errors.SchemaError):
+        validate_features(df)
+
+
+def test_validate_features_fails_age_out_of_range() -> None:
+    df = _make_valid_features_df()
+    df.loc[0, "age"] = 150.0
+    with pytest.raises(pandera.errors.SchemaError):
+        validate_features(df)
+
+
+def test_schema_rejects_duplicates() -> None:
+    df = _make_valid_features_df()
+    df = pd.concat([df, df], ignore_index=True)
+    with pytest.raises(pandera.errors.SchemaError):
+        build_feature_schema().validate(df)
