@@ -3,10 +3,13 @@
 from pathlib import Path
 
 import pandas as pd
+import pandera.pandas as pa
 import yaml
 from loguru import logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+MAX_NULL_FRACTION = 0.05
 
 
 def load_config() -> dict[str, str]:
@@ -30,12 +33,12 @@ def transform_features(df: pd.DataFrame, id_column: str, target_column: str) -> 
     """Transforma los datos crudos en features para el modelo."""
     logger.info("Iniciando transformación de features")
 
+    df = df.drop(columns=[id_column])
+    logger.info(f"Columna '{id_column}' eliminada")
+
     rows_before = len(df)
     df = df.drop_duplicates()
     logger.info(f"Duplicados eliminados: {rows_before - len(df)}")
-
-    df = df.drop(columns=[id_column])
-    logger.info(f"Columna '{id_column}' eliminada")
 
     rows_before = len(df)
     df = df.dropna(subset=[target_column])
@@ -55,6 +58,84 @@ def transform_features(df: pd.DataFrame, id_column: str, target_column: str) -> 
     return df
 
 
+def build_feature_schema() -> pa.DataFrameSchema:
+    """Define el esquema de validación para los features procesados."""
+    return pa.DataFrameSchema(
+        columns={
+            "crim": pa.Column(float, pa.Check.ge(0), nullable=False),
+            "zn": pa.Column(float, pa.Check.in_range(0, 100), nullable=False),
+            "indus": pa.Column(float, pa.Check.in_range(0, 30), nullable=False),
+            "chas": pa.Column(float, pa.Check.isin([0.0, 1.0]), nullable=False),
+            "nox": pa.Column(float, pa.Check.gt(0), nullable=False),
+            "rm": pa.Column(float, pa.Check.gt(0), nullable=False),
+            "age": pa.Column(float, pa.Check.in_range(0, 100), nullable=False),
+            "dis": pa.Column(float, pa.Check.gt(0), nullable=False),
+            "rad": pa.Column(float, pa.Check.ge(1), nullable=False),
+            "tax": pa.Column(float, pa.Check.gt(0), nullable=False),
+            "ptratio": pa.Column(float, pa.Check.in_range(10, 25), nullable=False),
+            "black": pa.Column(float, pa.Check.ge(0), nullable=False),
+            "lstat": pa.Column(float, pa.Check.in_range(0, 40), nullable=False),
+            "medv": pa.Column(float, pa.Check.gt(0), nullable=False),
+        },
+        checks=[
+            pa.Check(
+                lambda df: len(df) == len(df.drop_duplicates()),
+                error="El dataset contiene filas duplicadas",
+            ),
+        ],
+    )
+
+
+def validate_raw_data(df: pd.DataFrame, id_column: str, target_column: str) -> None:
+    """Valida los datos crudos antes de la transformación."""
+    logger.info("Validando datos crudos")
+
+    expected_columns = [
+        id_column,
+        "crim",
+        "zn",
+        "indus",
+        "chas",
+        "nox",
+        "rm",
+        "age",
+        "dis",
+        "rad",
+        "tax",
+        "ptratio",
+        "black",
+        "lstat",
+        target_column,
+    ]
+    missing = set(expected_columns) - set(df.columns)
+    if missing:
+        msg = f"Columnas faltantes en datos crudos: {missing}"
+        raise ValueError(msg)
+
+    if df.empty:
+        msg = "El dataset crudo está vacío"
+        raise ValueError(msg)
+
+    n_rows = len(df)
+    for col in df.columns:
+        null_fraction = df[col].isna().sum() / n_rows
+        if null_fraction > MAX_NULL_FRACTION:
+            logger.warning(
+                f"Columna '{col}' tiene {null_fraction:.1%} nulos (máximo: {MAX_NULL_FRACTION:.0%})"
+            )
+
+    logger.info("Validación de datos crudos completada")
+
+
+def validate_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Valida los features procesados con pandera."""
+    logger.info("Validando features procesados")
+    schema = build_feature_schema()
+    validated: pd.DataFrame = schema.validate(df)
+    logger.info("Validación de features exitosa")
+    return validated
+
+
 def save_features(df: pd.DataFrame, path: str) -> None:
     """Almacena los features procesados en un archivo CSV."""
     full_path = Path(path) if Path(path).is_absolute() else PROJECT_ROOT / path
@@ -68,7 +149,9 @@ def run() -> None:
     config = load_config()
 
     df = load_raw_data(config["raw_data_path"])
+    validate_raw_data(df, config["id_column"], config["target_column"])
     df = transform_features(df, config["id_column"], config["target_column"])
+    validate_features(df)
     save_features(df, config["feature_data_path"])
 
     logger.info("Feature pipeline completado exitosamente")
