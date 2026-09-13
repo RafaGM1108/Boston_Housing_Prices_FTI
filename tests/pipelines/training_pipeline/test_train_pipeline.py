@@ -16,6 +16,7 @@ from pipelines.training_pipeline.train_pipeline import (
     save_model,
     split_data,
     train_and_evaluate,
+    validate_model,
     validate_train_test_split,
 )
 
@@ -177,3 +178,82 @@ def test_validate_split_checks_feature_distributions() -> None:
     result = validate_train_test_split(x_train, x_test, y_train, y_test)
     assert "feature_distributions" in result["checks"]
     assert len(result["checks"]["feature_distributions"]) > 0
+
+
+# --- Tests de validación del modelo (issue 5) ---
+
+
+def test_validate_model_good_fit() -> None:
+    cv_results = {
+        "TestModel": {
+            "cv_rmse": 3.0,
+            "cv_mae": 2.0,
+            "cv_r2": 0.85,
+            "cv_train_rmse": 2.8,
+            "cv_train_r2": 0.88,
+        }
+    }
+    train_metrics = {"rmse": 2.5, "mae": 1.8, "r2": 0.90}
+    test_metrics = {"rmse": 3.1, "mae": 2.1, "r2": 0.84}
+    result = validate_model("TestModel", cv_results, train_metrics, test_metrics)
+    assert "good_fit" in result["diagnosis"]
+    assert "comparison" in result
+
+
+def test_validate_model_detects_overfitting() -> None:
+    cv_results = {
+        "TestModel": {
+            "cv_rmse": 5.0,
+            "cv_mae": 4.0,
+            "cv_r2": 0.60,
+            "cv_train_rmse": 1.0,
+            "cv_train_r2": 0.99,
+        }
+    }
+    train_metrics = {"rmse": 0.5, "mae": 0.3, "r2": 0.99}
+    test_metrics = {"rmse": 6.0, "mae": 5.0, "r2": 0.50}
+    result = validate_model("TestModel", cv_results, train_metrics, test_metrics)
+    assert "overfitting" in result["diagnosis"]
+
+
+def test_validate_model_detects_underfitting() -> None:
+    cv_results = {
+        "TestModel": {
+            "cv_rmse": 10.0,
+            "cv_mae": 8.0,
+            "cv_r2": 0.20,
+            "cv_train_rmse": 9.5,
+            "cv_train_r2": 0.25,
+        }
+    }
+    train_metrics = {"rmse": 9.0, "mae": 7.5, "r2": 0.30}
+    test_metrics = {"rmse": 10.5, "mae": 8.5, "r2": 0.15}
+    result = validate_model("TestModel", cv_results, train_metrics, test_metrics)
+    assert "underfitting" in result["diagnosis"]
+
+
+def test_validate_model_returns_comparison_keys() -> None:
+    cv_results = {
+        "TestModel": {
+            "cv_rmse": 3.0,
+            "cv_mae": 2.0,
+            "cv_r2": 0.85,
+            "cv_train_rmse": 2.8,
+            "cv_train_r2": 0.88,
+        }
+    }
+    train_metrics = {"rmse": 2.5, "mae": 1.8, "r2": 0.90}
+    test_metrics = {"rmse": 3.1, "mae": 2.1, "r2": 0.84}
+    result = validate_model("TestModel", cv_results, train_metrics, test_metrics)
+    expected_keys = [
+        "train_rmse",
+        "cv_train_rmse",
+        "cv_test_rmse",
+        "test_rmse",
+        "train_r2",
+        "cv_train_r2",
+        "cv_test_r2",
+        "test_r2",
+    ]
+    for key in expected_keys:
+        assert key in result["comparison"]
