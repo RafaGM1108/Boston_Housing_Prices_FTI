@@ -1,0 +1,4 @@
+raw_data_path: "data/01_raw/Precios_Casas_Boston.csv"
+feature_data_path: "data/04_feature/features.csv"
+target_column: "medv"
+id_column: "ID"

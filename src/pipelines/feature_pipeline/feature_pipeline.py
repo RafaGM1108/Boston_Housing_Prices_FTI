@@ -1,0 +1,78 @@
+"""Feature pipeline para el proyecto Boston Home Prices."""
+
+from pathlib import Path
+
+import pandas as pd
+import yaml
+from loguru import logger
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def load_config() -> dict[str, str]:
+    """Carga la configuración desde conf/config.yml."""
+    config_path = PROJECT_ROOT / "conf" / "config.yml"
+    with open(config_path) as f:
+        config: dict[str, str] = yaml.safe_load(f)
+    return config
+
+
+def load_raw_data(path: str) -> pd.DataFrame:
+    """Lee los datos crudos desde CSV."""
+    full_path = Path(path) if Path(path).is_absolute() else PROJECT_ROOT / path
+    logger.info(f"Leyendo datos crudos desde {full_path}")
+    df: pd.DataFrame = pd.read_csv(full_path)
+    logger.info(f"Datos cargados: {df.shape[0]} filas, {df.shape[1]} columnas")
+    return df
+
+
+def transform_features(df: pd.DataFrame, id_column: str, target_column: str) -> pd.DataFrame:
+    """Transforma los datos crudos en features para el modelo."""
+    logger.info("Iniciando transformación de features")
+
+    rows_before = len(df)
+    df = df.drop_duplicates()
+    logger.info(f"Duplicados eliminados: {rows_before - len(df)}")
+
+    df = df.drop(columns=[id_column])
+    logger.info(f"Columna '{id_column}' eliminada")
+
+    rows_before = len(df)
+    df = df.dropna(subset=[target_column])
+    logger.info(f"Filas sin target eliminadas: {rows_before - len(df)}")
+
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    for col in numeric_cols:
+        if col != target_column:
+            median_val = df[col].median()
+            nulls = df[col].isna().sum()
+            if nulls > 0:
+                df[col] = df[col].fillna(median_val)
+                logger.info(f"Columna '{col}': {nulls} nulos imputados con mediana ({median_val})")
+
+    df = df.reset_index(drop=True)
+    logger.info(f"Features finales: {df.shape[0]} filas, {df.shape[1]} columnas")
+    return df
+
+
+def save_features(df: pd.DataFrame, path: str) -> None:
+    """Almacena los features procesados en un archivo CSV."""
+    full_path = Path(path) if Path(path).is_absolute() else PROJECT_ROOT / path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(full_path, index=False)
+    logger.info(f"Features guardados en {full_path}")
+
+
+def run() -> None:
+    """Ejecuta el feature pipeline completo."""
+    config = load_config()
+
+    df = load_raw_data(config["raw_data_path"])
+    df = transform_features(df, config["id_column"], config["target_column"])
+    save_features(df, config["feature_data_path"])
+
+    logger.info("Feature pipeline completado exitosamente")
+
+
+if __name__ == "__main__":
+    run()
