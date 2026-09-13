@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from loguru import logger
+from scipy import stats
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
@@ -60,6 +61,82 @@ def split_data(
     )
     logger.info(f"Train: {len(x_train)} filas, Test: {len(x_test)} filas")
     return x_train, x_test, y_train, y_test
+
+
+KS_ALPHA = 0.05
+
+
+def validate_train_test_split(
+    x_train: pd.DataFrame,
+    x_test: pd.DataFrame,
+    y_train: pd.Series,  # type: ignore[type-arg]
+    y_test: pd.Series,  # type: ignore[type-arg]
+) -> dict[str, Any]:
+    """Valida la separación train/test: no-overlap, distribución target y features."""
+    results: dict[str, Any] = {"passed": True, "checks": {}}
+
+    # 1. No hay filas compartidas entre train y test (data leakage)
+    train_idx = set(x_train.index.tolist())
+    test_idx = set(x_test.index.tolist())
+    overlap = train_idx & test_idx
+    no_leakage = len(overlap) == 0
+    results["checks"]["no_index_overlap"] = {
+        "passed": no_leakage,
+        "overlap_count": len(overlap),
+    }
+    if not no_leakage:
+        results["passed"] = False
+        logger.error(f"Data leakage detectado: {len(overlap)} índices compartidos")
+
+    # 2. Distribución del target (KS test)
+    ks_stat, ks_pvalue = stats.ks_2samp(y_train.values, y_test.values)
+    target_ok = ks_pvalue > KS_ALPHA
+    results["checks"]["target_distribution"] = {
+        "passed": target_ok,
+        "ks_statistic": float(ks_stat),
+        "p_value": float(ks_pvalue),
+    }
+    if not target_ok:
+        results["passed"] = False
+        logger.warning(f"Distribución del target difiere significativamente (KS p={ks_pvalue:.4f})")
+    else:
+        logger.info(f"Target: distribución similar (KS p={ks_pvalue:.4f})")
+
+    # 3. Distribución de features numéricos (KS test por columna)
+    numeric_cols = x_train.select_dtypes(include=["number"]).columns
+    feature_checks: dict[str, dict[str, Any]] = {}
+    for col in numeric_cols:
+        f_stat, f_pvalue = stats.ks_2samp(
+            x_train[col].dropna().values,
+            x_test[col].dropna().values,
+        )
+        col_ok = f_pvalue > KS_ALPHA
+        feature_checks[col] = {
+            "passed": col_ok,
+            "ks_statistic": float(f_stat),
+            "p_value": float(f_pvalue),
+        }
+        if not col_ok:
+            logger.warning(f"Feature '{col}': distribución difiere (KS p={f_pvalue:.4f})")
+    results["checks"]["feature_distributions"] = feature_checks
+
+    # 4. Proporciones de tamaño
+    total = len(x_train) + len(x_test)
+    train_ratio = len(x_train) / total
+    results["checks"]["size_ratio"] = {
+        "train_ratio": float(train_ratio),
+        "train_size": len(x_train),
+        "test_size": len(x_test),
+    }
+    logger.info(f"Split ratio: train={train_ratio:.2%}, test={1 - train_ratio:.2%}")
+
+    if results["passed"]:
+        logger.info("Validación train/test split: PASSED")
+    else:
+        msg = "Validación train/test split: FAILED"
+        raise ValueError(msg)
+
+    return results
 
 
 def build_preprocessor() -> ColumnTransformer:
@@ -224,6 +301,8 @@ def run() -> None:
         df, config["target_column"], config["test_size"], config["random_state"]
     )
 
+    split_validation = validate_train_test_split(x_train, x_test, y_train, y_test)
+
     models = build_models()
     best_name, best_pipeline, cv_results = select_best_model(models, x_train, y_train)
 
@@ -235,6 +314,7 @@ def run() -> None:
     save_metrics(
         {
             "best_model": best_name,
+            "split_validation": split_validation,
             "cv_results": cv_results,
             "train_metrics": train_metrics,
             "test_metrics": test_metrics,
