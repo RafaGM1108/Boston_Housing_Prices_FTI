@@ -36,6 +36,14 @@ def transform_features(df: pd.DataFrame, id_column: str, target_column: str) -> 
     df = df.drop(columns=[id_column])
     logger.info(f"Columna '{id_column}' eliminada")
 
+    scale_corrections = {"crim": 100, "nox": 1, "rm": 100, "dis": 100}
+    for col, threshold in scale_corrections.items():
+        mask = df[col] > threshold
+        affected = mask.sum()
+        if affected > 0:
+            df.loc[mask, col] = df.loc[mask, col] / 1000
+            logger.info(f"Escala corregida en '{col}': {affected} valores divididos por 1000")
+
     rows_before = len(df)
     df = df.drop_duplicates()
     logger.info(f"Duplicados eliminados: {rows_before - len(df)}")
@@ -62,14 +70,14 @@ def build_feature_schema() -> pa.DataFrameSchema:
     """Define el esquema de validación para los features procesados."""
     return pa.DataFrameSchema(
         columns={
-            "crim": pa.Column(float, pa.Check.ge(0), nullable=False),
+            "crim": pa.Column(float, pa.Check.in_range(0, 90), nullable=False),
             "zn": pa.Column(float, pa.Check.in_range(0, 100), nullable=False),
             "indus": pa.Column(float, pa.Check.in_range(0, 30), nullable=False),
             "chas": pa.Column(float, pa.Check.isin([0.0, 1.0]), nullable=False),
-            "nox": pa.Column(float, pa.Check.gt(0), nullable=False),
-            "rm": pa.Column(float, pa.Check.gt(0), nullable=False),
+            "nox": pa.Column(float, pa.Check.in_range(0.3, 0.9), nullable=False),
+            "rm": pa.Column(float, pa.Check.in_range(3, 9), nullable=False),
             "age": pa.Column(float, pa.Check.in_range(0, 100), nullable=False),
-            "dis": pa.Column(float, pa.Check.gt(0), nullable=False),
+            "dis": pa.Column(float, pa.Check.in_range(1, 13), nullable=False),
             "rad": pa.Column(float, pa.Check.ge(1), nullable=False),
             "tax": pa.Column(float, pa.Check.gt(0), nullable=False),
             "ptratio": pa.Column(float, pa.Check.in_range(10, 25), nullable=False),
