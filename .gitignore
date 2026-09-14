@@ -8,6 +8,10 @@ data/**
 # also keep all .gitkeep files
 !.gitkeep
 
+# keep model and batch example for Streamlit deployment
+!data/06_models/model.joblib
+!data/ejemplo_batch.csv
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

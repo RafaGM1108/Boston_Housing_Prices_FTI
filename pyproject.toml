@@ -14,6 +14,7 @@ dependencies = [
     "loguru>=0.7.0",
     "pyyaml>=6.0",
     "pandera>=0.20.0",
+    "streamlit>=1.63.0",
 ]
 
 [project.urls]

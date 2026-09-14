@@ -1,4 +1,4 @@
-# Template for data science with Python 3.12 and devcontainer
+# Boston Housing Prices — FTI Pipelines
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3120/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,12 +9,42 @@
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
 
-This is a data science project template created with [Cookiecutter] to help you start your next data science or machine learning project quickly and efficiently. It includes a well-organized folder structure, essential tools for code quality, testing, and documentation, and follows best practices in the industry.
-
-Using the data science project template <https://github.com/JoseRZapata/data-science-project-template>
+Pipelines productivos (Feature / Training / Inference) para predicción de precios de viviendas en Boston.
+Basado en la exploración del [repositorio POC](https://github.com/RafaGM1108/Boston_Home_Prices).
 
 - `Python` = `3.12`
-- `devcontainer` to work in `VSCode` or [GitHub Codespaces](https://github.com/features/codespaces) using the same environment as in production.
+- Template base: [data-science-project-template](https://github.com/JoseRZapata/data-science-project-template)
+
+## Datos
+
+El archivo de datos crudos (`data/01_raw/Precios_Casas_Boston.csv`) está excluido del repositorio (`.gitignore`).
+Para obtenerlo, cópialo desde el repositorio POC:
+
+```bash
+git clone https://github.com/RafaGM1108/Boston_Home_Prices.git /tmp/boston_poc
+cp /tmp/boston_poc/data/01_raw/Precios_Casas_Boston.csv data/01_raw/
+```
+
+## Ejecución de pipelines
+
+Desde la carpeta `src/`:
+
+```bash
+# 1. Feature pipeline (limpieza, transformación, validación)
+uv run python -m pipelines.feature_pipeline.feature_pipeline
+
+# 2. Training pipeline (selección de modelo, entrenamiento, validación)
+uv run python -m pipelines.training_pipeline.train_pipeline
+
+# 3. Inference pipeline (predicciones con el modelo entrenado)
+uv run python -m pipelines.inference_pipeline.inference_pipeline
+```
+
+## Demo Streamlit
+
+```bash
+streamlit run src/app/demo.py
+```
 
 ## ✨ Features and Tools
 
