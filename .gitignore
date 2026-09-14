@@ -11,6 +11,7 @@ data/**
 # keep model and batch example for Streamlit deployment
 !data/06_models/model.joblib
 !data/ejemplo_batch.csv
+!data/01_raw/Precios_Casas_Boston.csv
 
 
 # Byte-compiled / optimized / DLL files
