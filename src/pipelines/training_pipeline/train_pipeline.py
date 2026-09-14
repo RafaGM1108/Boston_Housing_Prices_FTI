@@ -362,7 +362,7 @@ def save_metrics(metrics: dict[str, Any], path: str) -> None:
     full_path = Path(path) if Path(path).is_absolute() else PROJECT_ROOT / path
     full_path.parent.mkdir(parents=True, exist_ok=True)
     with open(full_path, "w") as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(metrics, f, indent=2, default=str)
     logger.info(f"Métricas guardadas en {full_path}")
 
 
