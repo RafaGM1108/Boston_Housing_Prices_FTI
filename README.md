@@ -17,13 +17,7 @@ Basado en la exploración del [repositorio POC](https://github.com/RafaGM1108/Bo
 
 ## Datos
 
-El archivo de datos crudos (`data/01_raw/Precios_Casas_Boston.csv`) está excluido del repositorio (`.gitignore`).
-Para obtenerlo, cópialo desde el repositorio POC:
-
-```bash
-git clone https://github.com/RafaGM1108/Boston_Home_Prices.git /tmp/boston_poc
-cp /tmp/boston_poc/data/01_raw/Precios_Casas_Boston.csv data/01_raw/
-```
+El archivo de datos crudos se encuentra en `data/01_raw/Precios_Casas_Boston.csv`.
 
 ## Ejecución de pipelines
 
