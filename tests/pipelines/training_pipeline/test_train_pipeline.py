@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from pipelines.training_pipeline.train_pipeline import (
     build_models,
@@ -15,11 +16,14 @@ from pipelines.training_pipeline.train_pipeline import (
     save_model,
     split_data,
     train_and_evaluate,
+    validate_train_test_split,
 )
 
 EXPECTED_FEATURES = 13
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
+MIN_TRAIN_RATIO = 0.75
+MAX_TRAIN_RATIO = 0.85
 
 
 def _make_features_df(n: int = 50) -> pd.DataFrame:
@@ -128,3 +132,48 @@ def test_load_features(tmp_path: object) -> None:
     df.to_csv(csv_path, index=False)
     loaded = load_features(csv_path)
     assert len(loaded) == len(df)
+
+
+# --- Tests de validación train/test split (issue 4) ---
+
+
+def test_validate_split_passes_valid_split() -> None:
+    df = _make_features_df(200)
+    x_train, x_test, y_train, y_test = split_data(df, "medv", TEST_SIZE, RANDOM_STATE)
+    result = validate_train_test_split(x_train, x_test, y_train, y_test)
+    assert result["passed"] is True
+    assert result["checks"]["no_index_overlap"]["passed"] is True
+
+
+def test_validate_split_detects_index_overlap() -> None:
+    df = _make_features_df(100)
+    x_train, x_test, y_train, y_test = split_data(df, "medv", TEST_SIZE, RANDOM_STATE)
+    # Forzar overlap copiando filas de train a test
+    x_test_leaked = pd.concat([x_test, x_train.iloc[:5]])
+    y_test_leaked = pd.concat([y_test, y_train.iloc[:5]])
+    with pytest.raises(ValueError, match="FAILED"):
+        validate_train_test_split(x_train, x_test_leaked, y_train, y_test_leaked)
+
+
+def test_validate_split_reports_size_ratio() -> None:
+    df = _make_features_df(200)
+    x_train, x_test, y_train, y_test = split_data(df, "medv", TEST_SIZE, RANDOM_STATE)
+    result = validate_train_test_split(x_train, x_test, y_train, y_test)
+    ratio = result["checks"]["size_ratio"]["train_ratio"]
+    assert MIN_TRAIN_RATIO < ratio < MAX_TRAIN_RATIO
+
+
+def test_validate_split_checks_target_distribution() -> None:
+    df = _make_features_df(200)
+    x_train, x_test, y_train, y_test = split_data(df, "medv", TEST_SIZE, RANDOM_STATE)
+    result = validate_train_test_split(x_train, x_test, y_train, y_test)
+    assert "target_distribution" in result["checks"]
+    assert "p_value" in result["checks"]["target_distribution"]
+
+
+def test_validate_split_checks_feature_distributions() -> None:
+    df = _make_features_df(200)
+    x_train, x_test, y_train, y_test = split_data(df, "medv", TEST_SIZE, RANDOM_STATE)
+    result = validate_train_test_split(x_train, x_test, y_train, y_test)
+    assert "feature_distributions" in result["checks"]
+    assert len(result["checks"]["feature_distributions"]) > 0
