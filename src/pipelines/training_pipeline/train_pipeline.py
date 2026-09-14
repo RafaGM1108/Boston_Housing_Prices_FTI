@@ -243,6 +243,8 @@ def select_best_model(
             "cv_rmse": mean_rmse,
             "cv_mae": mean_mae,
             "cv_r2": mean_r2,
+            "cv_train_rmse": float(-cv["train_RMSE"].mean()),
+            "cv_train_r2": float(cv["train_R2"].mean()),
         }
         logger.info(f"{name} — CV RMSE: {mean_rmse:.4f}, MAE: {mean_mae:.4f}, R2: {mean_r2:.4f}")
 
@@ -273,6 +275,78 @@ def train_and_evaluate(
     logger.info(f"Test  — RMSE: {test_metrics['rmse']:.4f}, R2: {test_metrics['r2']:.4f}")
 
     return pipeline, train_metrics, test_metrics
+
+
+OVERFIT_THRESHOLD = 0.3
+UNDERFIT_R2_THRESHOLD = 0.5
+
+
+def validate_model(
+    best_name: str,
+    cv_results: dict[str, Any],
+    train_metrics: dict[str, float],
+    test_metrics: dict[str, float],
+) -> dict[str, Any]:
+    """Compara train, CV y test; detecta overfitting/underfitting."""
+    cv_best = cv_results[best_name]
+
+    comparison = {
+        "train_rmse": train_metrics["rmse"],
+        "cv_train_rmse": cv_best["cv_train_rmse"],
+        "cv_test_rmse": cv_best["cv_rmse"],
+        "test_rmse": test_metrics["rmse"],
+        "train_r2": train_metrics["r2"],
+        "cv_train_r2": cv_best["cv_train_r2"],
+        "cv_test_r2": cv_best["cv_r2"],
+        "test_r2": test_metrics["r2"],
+    }
+
+    logger.info("=== Comparación Train / CV / Test ===")
+    logger.info(
+        f"RMSE — Train: {comparison['train_rmse']:.4f}, "
+        f"CV-train: {comparison['cv_train_rmse']:.4f}, "
+        f"CV-test: {comparison['cv_test_rmse']:.4f}, "
+        f"Test: {comparison['test_rmse']:.4f}"
+    )
+    logger.info(
+        f"R2   — Train: {comparison['train_r2']:.4f}, "
+        f"CV-train: {comparison['cv_train_r2']:.4f}, "
+        f"CV-test: {comparison['cv_test_r2']:.4f}, "
+        f"Test: {comparison['test_r2']:.4f}"
+    )
+
+    diagnosis: list[str] = []
+
+    rmse_gap = comparison["train_rmse"] - comparison["cv_test_rmse"]
+    if abs(rmse_gap) > OVERFIT_THRESHOLD * comparison["cv_test_rmse"]:
+        if rmse_gap < 0:
+            diagnosis.append("overfitting")
+            logger.warning(
+                "Overfitting detectado: train RMSE muy inferior a CV RMSE "
+                f"(gap={abs(rmse_gap):.4f})"
+            )
+        else:
+            diagnosis.append("underfitting")
+
+    if comparison["cv_test_r2"] < UNDERFIT_R2_THRESHOLD:
+        diagnosis.append("underfitting")
+        logger.warning(
+            f"Underfitting: CV R2={comparison['cv_test_r2']:.4f} < {UNDERFIT_R2_THRESHOLD}"
+        )
+
+    if not diagnosis:
+        diagnosis.append("good_fit")
+        logger.info("Modelo con buen ajuste: sin señales de overfitting ni underfitting")
+
+    unique_diagnosis = list(dict.fromkeys(diagnosis))
+
+    validation: dict[str, Any] = {
+        "comparison": comparison,
+        "diagnosis": unique_diagnosis,
+    }
+
+    logger.info(f"Diagnóstico: {unique_diagnosis}")
+    return validation
 
 
 def save_model(model: Pipeline, path: str) -> None:
@@ -310,6 +384,8 @@ def run() -> None:
         best_pipeline, x_train, x_test, y_train, y_test
     )
 
+    model_validation = validate_model(best_name, cv_results, train_metrics, test_metrics)
+
     save_model(trained_model, config["model_path"])
     save_metrics(
         {
@@ -318,6 +394,7 @@ def run() -> None:
             "cv_results": cv_results,
             "train_metrics": train_metrics,
             "test_metrics": test_metrics,
+            "model_validation": model_validation,
         },
         config["metrics_path"],
     )
