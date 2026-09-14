@@ -7,3 +7,6 @@ model_path: "data/06_models/model.joblib"
 metrics_path: "data/08_reporting/metrics.json"
 test_size: 0.2
 random_state: 42
+
+inference_data_path: "data/01_raw/Precios_Casas_Boston.csv"
+predictions_path: "data/07_model_output/predictions.csv"
